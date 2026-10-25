@@ -1,0 +1,49 @@
+name: Build Android APK
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android packages
+        run: |
+          sdkmanager --install 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018'
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+      - name: Build Android APK
+        run: |
+          npm install --no-audit --no-fund
+          npx tauri android init --ci
+          npx tauri android build --apk --debug --ci
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MotionForge-Android-debug-APK
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+      - name: Release APK on version tags
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -type f | head -n 1)
+          test -n "$apk"
+          cp "$apk" MotionForge-Android-debug.apk
+          gh release create "$GITHUB_REF_NAME" MotionForge-Android-debug.apk --title "MotionForge $GITHUB_REF_NAME" --notes "Experimental debug APK."
