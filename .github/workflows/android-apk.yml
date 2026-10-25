@@ -34,6 +34,27 @@ jobs:
       - name: Build Android APK
         run: |
           npm install --no-audit --no-fund
+          python3 - <<'PY'
+          import os, struct, zlib
+          os.makedirs('src-tauri/icons', exist_ok=True)
+          size=512
+          def chunk(tag, data):
+              return struct.pack('!I', len(data))+tag+data+struct.pack('!I', zlib.crc32(tag+data)&0xffffffff)
+          pixels=[]
+          for y in range(size):
+              row=bytearray([0])
+              for x in range(size):
+                  bg=(27,27,25,255)
+                  # Geometric brass M mark inside a dark square.
+                  stem=(x in range(126,169) or x in range(342,385)) and 133<=y<=379
+                  diagonals=(130<=y<=300 and (abs(x-(147+(y-133)*1.08))<23 or abs(x-(363-(y-133)*1.08))<23))
+                  row.extend((199,162,124,255) if (stem or diagonals) else bg)
+              pixels.append(row)
+          payload=b''.join(pixels)
+          png=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('!2I5B',size,size,8,6,0,0,0))+chunk(b'IDAT',zlib.compress(payload,9))+chunk(b'IEND',b'')
+          open('src-tauri/icons/icon.png','wb').write(png)
+          PY
+          npx tauri icon src-tauri/icons/icon.png
           npx tauri android init --ci
           npx tauri android build --apk --debug --ci
       - name: Upload APK
